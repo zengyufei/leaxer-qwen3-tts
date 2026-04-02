@@ -258,6 +258,13 @@ std::vector<float> TTSEngine::synthesize(const std::string& text,
     token_ids.push_back(config::TTS_EOS);
     token_ids.push_back(config::IM_END);
     
+    // DEBUG: Print tokens
+    std::string token_str = "Tokens: ";
+    for (auto t : token_ids) {
+        token_str += std::to_string(t) + " ";
+    }
+    std::cerr << "[TTSEngine] " << token_str << std::endl;
+    
     return synthesize_tokens(token_ids, lang, params);
 }
 
@@ -809,7 +816,15 @@ std::vector<std::array<int64_t, 16>> TTSEngine::generate_codes(
         // Sample codebook 0
         int64_t code0 = sample_token(last_logits, params);
         
-        if (code0 == config::CODEC_EOS) break;
+        if (code0 == config::CODEC_EOS) {
+            std::cerr << std::endl; // finish line
+            break;
+        }
+        
+        if (step % 5 == 0) {
+            std::cerr << ".";
+            std::cerr.flush();
+        }
         
         // Predict sub-codes (1-15)
         auto subcodes = predict_subcodes(code0, params);
