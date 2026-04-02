@@ -3,6 +3,7 @@ name: Build
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
 
 env:
   ONNXRUNTIME_VERSION: "1.20.0"
