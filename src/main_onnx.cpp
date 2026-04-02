@@ -10,6 +10,11 @@
 #include <fstream>
 #include <filesystem>
 
+#ifdef _WIN32
+#include <io.h>
+#include <fcntl.h>
+#endif
+
 namespace fs = std::filesystem;
 
 static int write_wav(const char* path, const float* audio, size_t n_samples, int sample_rate) {
@@ -70,10 +75,11 @@ static void print_usage(const char* prog) {
     printf("  --top-k N             Top-k sampling (default: 50)\n");
     printf("  --top-p FLOAT         Top-p sampling (default: 0.95)\n");
     printf("  --max-tokens N        Max tokens (default: 2048)\n");
+    printf("  --daemon              Run in interactive daemon mode reading from stdin\n");
     printf("  -h, --help            Show this help\n");
     printf("\nExamples:\n");
     printf("  %s -m onnx/onnx_kv_06b -p \"Hello world\" -o hello.wav\n", prog);
-    printf("  %s -m onnx/onnx_kv_06b -p \"Hello\" --ref voice.wav -o cloned.wav\n", prog);
+    printf("  %s -m onnx/onnx_kv_06b --daemon\n", prog);
 }
 
 static leaxer_qwen::Language parse_language(const char* lang) {
@@ -95,6 +101,7 @@ int main(int argc, char** argv) {
     int top_k = 50;
     float top_p = 0.95f;
     int max_tokens = 2048;
+    bool is_daemon = false;
     
     for (int i = 1; i < argc; i++) {
         std::string arg = argv[i];
@@ -120,11 +127,13 @@ int main(int argc, char** argv) {
             top_p = std::atof(argv[++i]);
         } else if (arg == "--max-tokens" && i + 1 < argc) {
             max_tokens = std::atoi(argv[++i]);
+        } else if (arg == "--daemon") {
+            is_daemon = true;
         }
     }
     
-    if (!model_dir || !prompt) {
-        fprintf(stderr, "Error: --model and --prompt are required\n");
+    if (!model_dir || (!prompt && !is_daemon)) {
+        fprintf(stderr, "Error: --model and --prompt are required (unless --daemon is used)\n");
         print_usage(argv[0]);
         return 1;
     }
@@ -136,11 +145,13 @@ int main(int argc, char** argv) {
     
     auto lang = parse_language(lang_str);
     
-    printf("Model: %s\n", model_dir);
-    printf("Text: %s\n", prompt);
-    if (ref_audio) printf("Reference: %s\n", ref_audio);
-    printf("Language: %s\n", lang_str);
-    printf("Output: %s\n\n", output_path);
+    if (!is_daemon) {
+        printf("Model: %s\n", model_dir);
+        if (prompt) printf("Text: %s\n", prompt);
+        if (ref_audio) printf("Reference: %s\n", ref_audio);
+        printf("Language: %s\n", lang_str);
+        printf("Output: %s\n\n", output_path);
+    }
     
     // Create output directory if needed
     fs::path out(output_path);
@@ -159,6 +170,58 @@ int main(int argc, char** argv) {
     params.top_k = top_k;
     params.top_p = top_p;
     params.max_new_tokens = max_tokens;
+    
+    if (is_daemon) {
+        // Enforce binary stdout for Windows
+#ifdef _WIN32
+        _setmode(_fileno(stdout), _O_BINARY);
+#endif
+        std::string line;
+        while (std::getline(std::cin, line)) {
+            if (line.empty()) continue;
+            if (line == "EXIT") break;
+            
+            // Format: lang|||text  e.g.,  zh|||你好啊
+            leaxer_qwen::Language cur_lang = lang;
+            std::string cur_prompt = line;
+            
+            size_t sep_idx = line.find("|||");
+            if (sep_idx != std::string::npos) {
+                std::string lang_code = line.substr(0, sep_idx);
+                cur_prompt = line.substr(sep_idx + 3);
+                cur_lang = parse_language(lang_code.c_str());
+            }
+
+            std::vector<float> audio;
+            if (ref_audio) {
+                audio = engine.synthesize_clone(cur_prompt, ref_audio, cur_lang, params);
+            } else {
+                audio = engine.synthesize(cur_prompt, cur_lang, params);
+            }
+
+            if (audio.empty()) {
+                std::cout << "ERROR 0\n";
+                std::cout.flush();
+                continue;
+            }
+
+            // Convert to 16-bit PCM
+            size_t bytes_len = audio.size() * sizeof(int16_t);
+            std::vector<int16_t> pcm(audio.size());
+            for (size_t i = 0; i < audio.size(); i++) {
+                float sample = audio[i];
+                if (sample > 1.0f) sample = 1.0f;
+                else if (sample < -1.0f) sample = -1.0f;
+                pcm[i] = static_cast<int16_t>(sample * 32767.0f);
+            }
+
+            // Output protocol: AUDIO <size>\n<binary data>
+            std::cout << "AUDIO " << bytes_len << "\n";
+            std::cout.write(reinterpret_cast<char*>(pcm.data()), bytes_len);
+            std::cout.flush();
+        }
+        return 0;
+    }
     
     // Synthesize
     printf("Synthesizing...\n");
