@@ -3,6 +3,7 @@ import sys
 import struct
 import asyncio
 import subprocess
+import time
 from fastapi import FastAPI, Request
 from fastapi.responses import StreamingResponse
 import uvicorn
@@ -12,7 +13,7 @@ app = FastAPI(title="Qwen3-TTS HTTP Server")
 # 默认情况下需要将 leaxer-qwen3-tts.exe 放到根目录或者指定路径
 # 同样模型目录也需要在此配置
 MODEL_DIR = os.getenv("TTS_MODEL_DIR", "onnx/onnx_kv_06b")
-EXE_PATH = os.getenv("TTS_EXE_PATH", "./build/leaxer-qwen3-tts.exe")
+EXE_PATH = os.getenv("TTS_EXE_PATH", "./leaxer-qwen3-tts.exe")
 
 # 如果在 Windows 环境运行，需要确保 exe 后缀
 if os.name == 'nt' and not EXE_PATH.endswith('.exe'):
@@ -129,8 +130,13 @@ async def api_tts(text: str, lang: str = "auto", seed: int = -1):
     供阅读APP调用的 HTTP TTS 接口（支持 GET 和 POST）
     返回的是标准的 WAV 音频流文件
     """
+    start_time = time.time()
     try:
         pcm_data = await daemon.synthesize(text, lang, seed)
+        
+        elapsed = time.time() - start_time
+        print(f"INFO:     [api/tts] Generation complete | Text len: {len(text)} | Time: {elapsed:.2f}s")
+        
         wav_header = create_wav_header(pcm_data, sample_rate=24000)
         
         def iterfile():
