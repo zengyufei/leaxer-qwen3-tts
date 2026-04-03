@@ -15,6 +15,7 @@
 #include <memory>
 #include <array>
 #include <optional>
+#include <random>
 
 // Forward declare ONNX Runtime types
 namespace Ort {
