@@ -76,6 +76,7 @@ static void print_usage(const char* prog) {
     printf("  --top-k N             Top-k sampling (default: 50)\n");
     printf("  --top-p FLOAT         Top-p sampling (default: 0.95)\n");
     printf("  --max-tokens N        Max tokens (default: 2048)\n");
+    printf("  --seed N              Random seed for deterministic generation (-1 for random)\n");
     printf("  --daemon              Run in interactive daemon mode reading from stdin\n");
     printf("  -h, --help            Show this help\n");
     printf("\nExamples:\n");
@@ -102,6 +103,7 @@ int main(int argc, char** argv) {
     int top_k = 50;
     float top_p = 0.95f;
     int max_tokens = 2048;
+    long long global_seed = -1;
     bool is_daemon = false;
     
     for (int i = 1; i < argc; i++) {
@@ -128,6 +130,8 @@ int main(int argc, char** argv) {
             top_p = std::atof(argv[++i]);
         } else if (arg == "--max-tokens" && i + 1 < argc) {
             max_tokens = std::atoi(argv[++i]);
+        } else if (arg == "--seed" && i + 1 < argc) {
+            global_seed = std::atoll(argv[++i]);
         } else if (arg == "--daemon") {
             is_daemon = true;
         }
@@ -171,6 +175,7 @@ int main(int argc, char** argv) {
     params.top_k = top_k;
     params.top_p = top_p;
     params.max_new_tokens = max_tokens;
+    params.seed = global_seed;
     
     if (is_daemon) {
         // Enforce binary stdout for Windows
@@ -182,22 +187,34 @@ int main(int argc, char** argv) {
             if (line.empty()) continue;
             if (line == "EXIT") break;
             
-            // Format: lang|||text  e.g.,  zh|||你好啊
+            // Format: lang|||seed|||text  e.g.,  zh|||12345|||你好啊
             leaxer_qwen::Language cur_lang = lang;
+            long long cur_seed = global_seed;
             std::string cur_prompt = line;
             
-            size_t sep_idx = line.find("|||");
-            if (sep_idx != std::string::npos) {
-                std::string lang_code = line.substr(0, sep_idx);
-                cur_prompt = line.substr(sep_idx + 3);
+            size_t sep1 = line.find("|||");
+            if (sep1 != std::string::npos) {
+                std::string lang_code = line.substr(0, sep1);
                 cur_lang = parse_language(lang_code.c_str());
+                
+                size_t sep2 = line.find("|||", sep1 + 3);
+                if (sep2 != std::string::npos) {
+                    std::string seed_str = line.substr(sep1 + 3, sep2 - (sep1 + 3));
+                    cur_seed = std::atoll(seed_str.c_str());
+                    cur_prompt = line.substr(sep2 + 3);
+                } else {
+                    cur_prompt = line.substr(sep1 + 3);
+                }
             }
+
+            leaxer_qwen::SamplingParams cur_params = params;
+            cur_params.seed = cur_seed;
 
             std::vector<float> audio;
             if (ref_audio) {
-                audio = engine.synthesize_clone(cur_prompt, ref_audio, cur_lang, params);
+                audio = engine.synthesize_clone(cur_prompt, ref_audio, cur_lang, cur_params);
             } else {
-                audio = engine.synthesize(cur_prompt, cur_lang, params);
+                audio = engine.synthesize(cur_prompt, cur_lang, cur_params);
             }
 
             if (audio.empty()) {

@@ -365,10 +365,10 @@ public:
         //   5. Standalone whitespace (for multiple spaces, tabs, etc.)
         std::regex pattern(
             "'s|'t|'re|'ve|'m|'ll|'d|"  // Contractions
-            " ?[A-Za-z]+|"               // Optional space + letters (key fix!)
-            "[0-9]+|"                    // Numbers (one or more digits)
-            " ?[^\\s\\w]+|"              // Optional space + special chars
-            "\\s+"                       // Remaining whitespace
+            " ?[A-Za-z]+|"               // Optional space + letters
+            "[0-9]+|"                    // Numbers
+            " ?[^ \\t\\n\\rA-Za-z0-9_]+|" // Optional space + special chars & all UTF-8 multibyte
+            "[ \\t\\n\\r]+"              // Remaining whitespace
         );
 
         std::vector<std::string> chunks;

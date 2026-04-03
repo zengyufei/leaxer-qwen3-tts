@@ -800,6 +800,15 @@ std::vector<std::array<int64_t, 16>> TTSEngine::generate_codes(
     // Prefill
     auto logits = run_prefill(prompt_embeds, attention_mask);
     
+    // Initialize RNG
+    std::mt19937 gen;
+    if (params.seed >= 0) {
+        gen.seed(static_cast<uint32_t>(params.seed));
+    } else {
+        std::random_device rd;
+        gen.seed(rd());
+    }
+    
     // Get logits for last position
     size_t last_pos = (prompt_len - 1) * config::VOCAB_SIZE;
     std::vector<float> last_logits(logits.begin() + last_pos, logits.begin() + last_pos + config::VOCAB_SIZE);
@@ -814,7 +823,7 @@ std::vector<std::array<int64_t, 16>> TTSEngine::generate_codes(
         }
         
         // Sample codebook 0
-        int64_t code0 = sample_token(last_logits, params);
+        int64_t code0 = sample_token(last_logits, params, gen);
         
         if (code0 == config::CODEC_EOS) {
             std::cerr << std::endl; // finish line
@@ -827,7 +836,7 @@ std::vector<std::array<int64_t, 16>> TTSEngine::generate_codes(
         }
         
         // Predict sub-codes (1-15)
-        auto subcodes = predict_subcodes(code0, params);
+        auto subcodes = predict_subcodes(code0, params, gen);
         
         // Store frame
         std::array<int64_t, 16> frame;
@@ -863,7 +872,7 @@ std::vector<std::array<int64_t, 16>> TTSEngine::generate_codes(
     return all_codes;
 }
 
-std::array<int64_t, 15> TTSEngine::predict_subcodes(int64_t code0, const SamplingParams& params) {
+std::array<int64_t, 15> TTSEngine::predict_subcodes(int64_t code0, const SamplingParams& params, std::mt19937& gen) {
     std::array<int64_t, 15> subcodes;
     
     auto first_embed = run_codec_embed(code0);
@@ -876,7 +885,7 @@ std::array<int64_t, 15> TTSEngine::predict_subcodes(int64_t code0, const Samplin
     
     for (int j = 0; j < 15; ++j) {
         auto logits = run_code_predictor(predictor_input, j);
-        int64_t subcode = sample_token(logits, params);
+        int64_t subcode = sample_token(logits, params, gen);
         subcodes[j] = subcode;
         
         auto sub_embed = run_code_predictor_embed(subcode, j);
@@ -890,7 +899,7 @@ std::array<int64_t, 15> TTSEngine::predict_subcodes(int64_t code0, const Samplin
 // Sampling
 // ===========================================================================
 
-int64_t TTSEngine::sample_token(const std::vector<float>& logits, const SamplingParams& params) {
+int64_t TTSEngine::sample_token(const std::vector<float>& logits, const SamplingParams& params, std::mt19937& gen) {
     std::vector<float> probs = logits;
     
     // Temperature
@@ -913,8 +922,6 @@ int64_t TTSEngine::sample_token(const std::vector<float>& logits, const Sampling
     }
     
     // Sample
-    static std::random_device rd;
-    static std::mt19937 gen(rd());
     std::discrete_distribution<int64_t> dist(probs.begin(), probs.end());
     return dist(gen);
 }

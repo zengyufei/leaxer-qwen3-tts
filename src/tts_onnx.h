@@ -102,6 +102,7 @@ struct SamplingParams {
     int top_k = config::DEFAULT_TOP_K;
     float repetition_penalty = 1.0f;
     int max_new_tokens = config::MAX_NEW_TOKENS;
+    long long seed = -1;
 };
 
 // KV Cache for transformer layers
@@ -217,10 +218,10 @@ private:
                                                const std::vector<float>& speaker_embed = {});
     std::vector<std::array<int64_t, 16>> generate_codes(const std::vector<float>& prompt_embeds,
                                                         const SamplingParams& params);
-    std::array<int64_t, 15> predict_subcodes(int64_t code0, const SamplingParams& params);
+    std::array<int64_t, 15> predict_subcodes(int64_t code0, const SamplingParams& params, std::mt19937& gen);
     
     // Sampling
-    int64_t sample_token(const std::vector<float>& logits, const SamplingParams& params);
+    int64_t sample_token(const std::vector<float>& logits, const SamplingParams& params, std::mt19937& gen);
     static void softmax(std::vector<float>& logits);
     static void top_k_filter(std::vector<float>& logits, int k);
     static void top_p_filter(std::vector<float>& probs, float p);

@@ -52,7 +52,7 @@ class TTSDaemon:
                 self.process.kill()
             self.process = None
 
-    async def synthesize(self, text: str, lang: str = "auto") -> bytes:
+    async def synthesize(self, text: str, lang: str = "auto", seed: int = -1) -> bytes:
         if not self.process or self.process.poll() is not None:
             self.start() # 如果进程崩溃则尝试重启
             
@@ -62,7 +62,7 @@ class TTSDaemon:
         async with self.lock:
             # 去除换行符以防止破坏通讯协议
             text_clean = text.replace('\n', '，').replace('\r', ' ')
-            command = f"{lang}|||{text_clean}\n".encode('utf-8')
+            command = f"{lang}|||{seed}|||{text_clean}\n".encode('utf-8')
             
             # 发送生成命令
             self.process.stdin.write(command)
@@ -124,13 +124,13 @@ def create_wav_header(pcm_data: bytes, sample_rate: int = 24000) -> bytes:
 
 @app.get("/api/tts")
 @app.post("/api/tts")
-async def api_tts(text: str, lang: str = "auto"):
+async def api_tts(text: str, lang: str = "auto", seed: int = -1):
     """
     供阅读APP调用的 HTTP TTS 接口（支持 GET 和 POST）
     返回的是标准的 WAV 音频流文件
     """
     try:
-        pcm_data = await daemon.synthesize(text, lang)
+        pcm_data = await daemon.synthesize(text, lang, seed)
         wav_header = create_wav_header(pcm_data, sample_rate=24000)
         
         def iterfile():
