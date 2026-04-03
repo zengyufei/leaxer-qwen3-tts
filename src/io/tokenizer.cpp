@@ -33,7 +33,15 @@ static std::string byte_to_unicode(unsigned char b) {
     if ((b >= 33 && b <= 126) ||
         (b >= 161 && b <= 172) ||
         (b >= 174 && b <= 255)) {
-        return std::string(1, static_cast<char>(b));
+        if (b < 128) {
+            return std::string(1, static_cast<char>(b));
+        } else {
+            char utf8[3];
+            utf8[0] = static_cast<char>(0xC0 | (b >> 6));
+            utf8[1] = static_cast<char>(0x80 | (b & 0x3F));
+            utf8[2] = '\0';
+            return std::string(utf8);
+        }
     }
     
     // Other bytes (0-32, 127-160, 173) map to U+0100 + offset
